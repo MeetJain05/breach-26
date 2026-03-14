@@ -24,11 +24,37 @@ export interface IngestionTrend {
   count: number;
 }
 
+export interface StatusBreakdown {
+  status: string;
+  count: number;
+}
+
+export interface SkillCount {
+  skill: string;
+  count: number;
+}
+
+export interface LocationCount {
+  location: string;
+  count: number;
+}
+
+export interface ExperienceBucket {
+  bucket: string;
+  count: number;
+}
+
 export interface AnalyticsOverview {
   total_candidates: number;
   total_shortlists: number;
+  total_merged: number;
+  avg_confidence: number | null;
   sources: SourceBreakdown[];
   ingestion_trends: IngestionTrend[];
+  statuses: StatusBreakdown[];
+  top_skills: SkillCount[];
+  top_locations: LocationCount[];
+  experience_distribution: ExperienceBucket[];
 }
 
 export interface CandidateListItem {

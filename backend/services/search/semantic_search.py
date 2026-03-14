@@ -41,6 +41,7 @@ def _build_strict_filters(intent: SearchIntent) -> list:
     """
     conditions: list = [
         Candidate.ingestion_status.in_(_VALID_STATUSES),
+        Candidate.ingestion_status != "merged",
     ]
 
     # ── Strict experience filter ────────────────────────────────────

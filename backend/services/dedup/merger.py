@@ -116,13 +116,24 @@ async def merge_candidates(
 # ── Resolution helpers ────────────────────────────────────────────
 
 
+def _is_placeholder(val) -> bool:
+    """Check if a value is effectively empty/placeholder."""
+    if val is None:
+        return True
+    s = str(val).strip().lower()
+    return s in ("", "unknown", "none", "n/a", "null")
+
+
 def _resolve_scalar(field: str, old_val, new_val) -> dict:
     """Decide which scalar value to keep."""
-    if old_val is None and new_val is None:
+    old_empty = _is_placeholder(old_val)
+    new_empty = _is_placeholder(new_val)
+
+    if old_empty and new_empty:
         return {"action": "no_change"}
-    if old_val is None and new_val is not None:
+    if old_empty and not new_empty:
         return {"action": "updated", "kept": new_val, "reason": "was_empty"}
-    if new_val is None:
+    if new_empty:
         return {"action": "no_change"}
     if str(old_val).strip().lower() == str(new_val).strip().lower():
         return {"action": "no_change"}

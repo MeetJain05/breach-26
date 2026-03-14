@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.core.auth import get_current_user
 from backend.core.database import get_db
 from backend.models.user import User
-from backend.models.candidate import Candidate
+from backend.models.candidate import Candidate, CandidateMergeHistory
 from backend.schemas.candidate import (
     CandidateListItem,
     CandidateListResponse,
@@ -20,15 +20,28 @@ router = APIRouter(prefix="/api/candidates", tags=["Candidates"])
 async def list_candidates(
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
+    status: str = Query("active", regex="^(active|merged|all)$"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """List all candidates with pagination."""
-    count_result = await db.execute(select(func.count(Candidate.id)))
+    """List candidates with pagination and status filter.
+
+    status: 'active' (default, excludes merged), 'merged' (only merged), 'all'
+    """
+    base_filter = []
+    if status == "active":
+        base_filter.append(Candidate.ingestion_status != "merged")
+    elif status == "merged":
+        base_filter.append(Candidate.ingestion_status == "merged")
+
+    count_result = await db.execute(
+        select(func.count(Candidate.id)).where(*base_filter)
+    )
     total = count_result.scalar_one()
 
     result = await db.execute(
         select(Candidate)
+        .where(*base_filter)
         .order_by(Candidate.created_at.desc())
         .offset(skip)
         .limit(limit)
@@ -56,6 +69,63 @@ async def list_candidates(
             for c in candidates
         ],
     )
+
+
+@router.get("/merge-history")
+async def get_merge_history(
+    limit: int = Query(50, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """List all auto-merge events with candidate details."""
+    from sqlalchemy.orm import aliased
+
+    Primary = aliased(Candidate)
+
+    result = await db.execute(
+        select(
+            CandidateMergeHistory.id,
+            CandidateMergeHistory.merge_type,
+            CandidateMergeHistory.merge_reason,
+            CandidateMergeHistory.field_resolutions,
+            CandidateMergeHistory.created_at,
+            Primary.id.label("candidate_id"),
+            Primary.full_name,
+            Primary.email,
+            Primary.current_title,
+            Primary.location,
+            Primary.source,
+        )
+        .join(Primary, CandidateMergeHistory.primary_candidate_id == Primary.id)
+        .order_by(CandidateMergeHistory.created_at.desc())
+        .limit(limit)
+    )
+    rows = result.all()
+
+    total_result = await db.execute(
+        select(func.count(CandidateMergeHistory.id))
+    )
+    total = total_result.scalar_one()
+
+    return {
+        "total": total,
+        "results": [
+            {
+                "id": str(row.id),
+                "merge_type": row.merge_type,
+                "merge_reason": row.merge_reason,
+                "field_resolutions": row.field_resolutions,
+                "merged_at": str(row.created_at),
+                "candidate_id": str(row.candidate_id),
+                "full_name": row.full_name,
+                "email": row.email,
+                "current_title": row.current_title,
+                "location": row.location,
+                "source": row.source,
+            }
+            for row in rows
+        ],
+    }
 
 
 @router.get("/{candidate_id}", response_model=CandidateDetail)
@@ -165,6 +235,44 @@ async def update_candidate(
         created_at=candidate.created_at,
         updated_at=candidate.updated_at,
     )
+
+
+@router.delete("/cleanup/unknowns")
+async def cleanup_unknowns(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete all candidates with name 'Unknown' and status 'needs_review'."""
+    from sqlalchemy import delete, or_, and_
+
+    result = await db.execute(
+        select(func.count(Candidate.id)).where(
+            and_(
+                or_(
+                    func.lower(Candidate.full_name) == "unknown",
+                    Candidate.full_name.is_(None),
+                ),
+                Candidate.ingestion_status == "needs_review",
+            )
+        )
+    )
+    count = result.scalar_one()
+
+    if count > 0:
+        await db.execute(
+            delete(Candidate).where(
+                and_(
+                    or_(
+                        func.lower(Candidate.full_name) == "unknown",
+                        Candidate.full_name.is_(None),
+                    ),
+                    Candidate.ingestion_status == "needs_review",
+                )
+            )
+        )
+        await db.commit()
+
+    return {"deleted": count}
 
 
 @router.delete("/{candidate_id}", status_code=status.HTTP_204_NO_CONTENT)

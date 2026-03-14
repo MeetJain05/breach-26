@@ -131,6 +131,18 @@ async def save_to_db_node(state: IngestionState) -> dict:
     match_id = state.get("dedup_match_id")
     is_failed = state.get("status") == "needs_review"
 
+    # ── Skip saving empty/failed parses — no point storing "Unknown" stubs ──
+    if is_failed and not parsed.get("full_name"):
+        logger.warning(
+            "save_to_db: SKIPPING failed parse for '%s' — no usable data extracted",
+            state.get("filename", "unknown"),
+        )
+        return {
+            "candidate_id": None,
+            "status": "skipped_no_data",
+            "error": state.get("error", "Parsing produced no usable candidate data"),
+        }
+
     async with AsyncSessionLocal() as session:
         # ── AUTO MERGE ────────────────────────────────────────
         if classification == DedupClassification.AUTO_MERGE.value and match_id and not is_failed:

@@ -226,12 +226,16 @@ async def sync_gmail_inbox(user_id: str, user=None, session=None) -> list[dict]:
             "user_id": user_id,
         })
 
+        status = result.get("status")
+        if status == "skipped_no_data":
+            logger.warning("Gmail: skipped '%s' — parsing failed, no candidate created", att["filename"])
+            continue
         results.append({
             "filename": att["filename"],
             "sender": att.get("sender", ""),
             "subject": att.get("subject", ""),
             "candidate_id": result.get("candidate_id"),
-            "status": result.get("status"),
+            "status": status,
         })
 
     return results

@@ -20,15 +20,28 @@ router = APIRouter(prefix="/api/candidates", tags=["Candidates"])
 async def list_candidates(
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
+    status: str = Query("active", regex="^(active|merged|all)$"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """List all candidates with pagination."""
-    count_result = await db.execute(select(func.count(Candidate.id)))
+    """List candidates with pagination and status filter.
+
+    status: 'active' (default, excludes merged), 'merged' (only merged), 'all'
+    """
+    base_filter = []
+    if status == "active":
+        base_filter.append(Candidate.ingestion_status != "merged")
+    elif status == "merged":
+        base_filter.append(Candidate.ingestion_status == "merged")
+
+    count_result = await db.execute(
+        select(func.count(Candidate.id)).where(*base_filter)
+    )
     total = count_result.scalar_one()
 
     result = await db.execute(
         select(Candidate)
+        .where(*base_filter)
         .order_by(Candidate.created_at.desc())
         .offset(skip)
         .limit(limit)

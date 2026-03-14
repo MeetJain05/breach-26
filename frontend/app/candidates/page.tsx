@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/providers/auth-provider";
 import { api } from "@/lib/api";
@@ -10,7 +10,7 @@ import { Topbar } from "@/components/layout/topbar";
 import { StatusPill } from "@/components/ui/status-pill";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { MapPin, Briefcase, Mail } from "lucide-react";
+import { MapPin, Briefcase, Mail, GitMerge } from "lucide-react";
 
 const AVATAR_COLORS = [
   "bg-terra text-white",
@@ -38,6 +38,19 @@ export default function CandidatesPage() {
   const router = useRouter();
   const [data, setData] = useState<CandidateListResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState<"active" | "merged">("active");
+  const [mergedCount, setMergedCount] = useState(0);
+
+  const fetchCandidates = useCallback(
+    (status: "active" | "merged") => {
+      setLoading(true);
+      api<CandidateListResponse>(`/api/candidates?limit=50&status=${status}`)
+        .then(setData)
+        .catch(() => {})
+        .finally(() => setLoading(false));
+    },
+    [],
+  );
 
   useEffect(() => {
     if (authLoading) return;
@@ -45,11 +58,12 @@ export default function CandidatesPage() {
       router.push("/login");
       return;
     }
-    api<CandidateListResponse>("/api/candidates?limit=50")
-      .then(setData)
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [user, authLoading, router]);
+    fetchCandidates(tab);
+    // Also grab merged count for the badge
+    api<CandidateListResponse>("/api/candidates?limit=1&status=merged")
+      .then((r) => setMergedCount(r.total))
+      .catch(() => {});
+  }, [user, authLoading, router, tab, fetchCandidates]);
 
   if (authLoading) return null;
 
@@ -65,8 +79,38 @@ export default function CandidatesPage() {
                 Candidates
               </h1>
               <p className="mt-1 text-sm text-muted-foreground">
-                {data ? `${data.total} candidates in your pipeline` : "Loading..."}
+                {data ? `${data.total} ${tab === "merged" ? "merged" : ""} candidates in your pipeline` : "Loading..."}
               </p>
+            </div>
+
+            {/* Tab filter */}
+            <div className="flex items-center gap-1 rounded-lg border border-white/40 bg-white/30 p-1 backdrop-blur-sm dark:border-white/[0.06] dark:bg-white/[0.04]">
+              <button
+                onClick={() => setTab("active")}
+                className={`rounded-md px-3 py-1.5 text-xs font-medium transition-all ${
+                  tab === "active"
+                    ? "bg-white/80 text-foreground shadow-sm dark:bg-white/10"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Active
+              </button>
+              <button
+                onClick={() => setTab("merged")}
+                className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-all ${
+                  tab === "merged"
+                    ? "bg-white/80 text-foreground shadow-sm dark:bg-white/10"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <GitMerge className="size-3" />
+                Merged
+                {mergedCount > 0 && (
+                  <span className="ml-0.5 rounded-full bg-violet-100 px-1.5 py-px text-[10px] font-semibold text-violet-700 dark:bg-violet-500/20 dark:text-violet-300">
+                    {mergedCount}
+                  </span>
+                )}
+              </button>
             </div>
           </div>
 

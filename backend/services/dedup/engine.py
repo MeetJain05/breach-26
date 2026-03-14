@@ -104,8 +104,31 @@ async def run_dedup_check(
             result.composite_score, result.match_reason,
         )
 
-    # Sort by composite score descending
-    scored.sort(key=lambda s: s.composite_score, reverse=True)
+    # Sort by composite score descending; break ties by preferring the most
+    # complete candidate record (avoids merging into an "Unknown" stub).
+    candidate_map = {str(c.id): c for c in candidates}
+
+    def _completeness(sr: ScoreResult) -> int:
+        """Count populated fields — higher = more complete record."""
+        c = candidate_map.get(sr.matched_candidate_id)
+        if not c:
+            return 0
+        score = 0
+        if c.full_name and c.full_name.lower() != "unknown":
+            score += 2  # extra weight for having a real name
+        if c.current_title:
+            score += 1
+        if c.email:
+            score += 1
+        if c.summary:
+            score += 1
+        if c.skills:
+            score += 1
+        if c.years_experience is not None:
+            score += 1
+        return score
+
+    scored.sort(key=lambda s: (s.composite_score, _completeness(s)), reverse=True)
     best = scored[0]
 
     # Stage 3: Classify

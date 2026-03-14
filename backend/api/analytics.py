@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.core.auth import get_current_user
 from backend.core.database import get_db
 from backend.models.user import User
-from backend.models.candidate import Candidate
+from backend.models.candidate import Candidate, CandidateMergeHistory
 from backend.models.shortlist import Shortlist
 from backend.schemas.analytics import (
     AnalyticsOverview, SourceBreakdown, IngestionTrend,
@@ -34,9 +34,9 @@ async def analytics_overview(
     )
     total_shortlists = total_shortlists_result.scalar_one()
 
-    # Total merged
+    # Total merged (from merge history table, not ingestion_status)
     merged_result = await db.execute(
-        select(func.count(Candidate.id)).where(Candidate.ingestion_status == "merged")
+        select(func.count(CandidateMergeHistory.id))
     )
     total_merged = merged_result.scalar_one()
 
